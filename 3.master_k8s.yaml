@@ -1,0 +1,17 @@
+- hosts: masters
+  remote_user: ansible
+  become: yes
+  become_method: sudo
+  become_user: root
+  gather_facts: yes
+  connection: ssh
+  
+  tasks:  
+
+  - name: Pull container images.
+    command: kubeadm config images pull --cri-socket /run/cri-dockerd.sock
+
+  - name: Enable service kubelet, and enable persistently
+    service: 
+      name: kubelet
+      enabled: yes

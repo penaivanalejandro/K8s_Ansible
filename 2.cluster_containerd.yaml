@@ -1,0 +1,159 @@
+---
+- hosts: "masters, workers"
+  debugger: on_failed
+  #remote_user: ipena
+  become: yes
+  become_method: sudo
+  #become_user: root
+  gather_facts: yes
+  connection: ssh
+  
+  tasks:
+   
+
+   - name: Add Kubernetes repository for Ubuntu 20.04
+     apt:
+       name:
+         - curl
+         - apt-transport-https
+       state: present
+
+   - name: Add Google official GPG key
+     apt_key:
+       url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+       state: present
+
+   - name: Add Kubernetes Repository
+     apt_repository:
+       repo: deb http://apt.kubernetes.io/ kubernetes-xenial main
+       state: present
+       filename: kubernetes
+       mode: 0600
+
+   - name: Update Repository
+     shell: |
+             sudo apt update
+
+   - name: Install Kubernetes Repository
+     apt:
+       name:
+         - vim
+         - git
+         - curl
+         - wget
+         - kubelet
+         - kubeadm
+         - kubectl
+       state: present
+
+   - name: Hold kubelet kubeadm kubectl
+     shell: |
+             sudo apt-mark hold kubelet kubeadm kubectl
+
+   - name: Make the Swap inactive command "swapoff -a"
+     command: swapoff -a
+
+   - name: Remove Swap entry from /etc/fstab.
+     lineinfile:
+       dest: /etc/fstab
+       regexp: swap
+       state: absent
+
+   - name: modprobe
+     shell: |
+             sudo modprobe overlay
+             sudo modprobe br_netfilter
+
+   - name: Set system configurations for Kubernetes networking
+     file:
+       path: "/etc/sysctl.d/kubernetes.conf"
+       state: "touch"
+
+   - name: Add conf for containerd
+     blockinfile:
+       path: "/etc/sysctl.d/kubernetes.conf"
+       block: |
+             net.bridge.bridge-nf-call-iptables = 1
+             net.ipv4.ip_forward = 1
+             net.bridge.bridge-nf-call-ip6tables = 1
+             net.ipv6.conf.all.forwarding = 1
+
+   - name: Apply new settings
+     command: sudo sysctl --system
+
+   - name: Create containerd config file.
+     file:
+       path: /etc/modules-load.d/containerd.conf
+       state: "touch"
+
+   - name: Add conf for containerd.
+     blockinfile:
+       path: /etc/modules-load.d/containerd.conf 
+       block: |
+            overlay
+            br_netfilter
+
+   - name: Modprobe
+     shell: |
+             modprobe overlay
+             modprobe br_netfilter
+
+   - name: Apply sysctl params without reboot.
+     command: sysctl --system
+
+   - name: Install required packages for containerd
+     apt:
+       name:
+         - curl
+         - gnupg2
+         - software-properties-common
+         - apt-transport-https
+         - ca-certificates
+       state: present
+    
+   - name: Add docker key
+     apt_key:
+       url: https://download.docker.com/linux/ubuntu/gpg
+       state: present
+
+   - name: Add Docker Repository
+     apt_repository:
+       repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
+       state: present
+       filename: docker
+       update_cache: yes
+
+   - name: Update Repository
+     shell: |
+             sudo apt update
+
+   - name: Install containerd
+     apt:
+       name:
+       - containerd.io
+       state: present
+
+   - name: Create Dir for containerd
+     file:
+       path: /etc/containerd
+
+   - name: Config defaulto to /etc/containerd/config.toml
+     shell: /usr/bin/containerd config default > /etc/containerd/config.toml
+
+   - name: Enable containerd service, and start it.
+     systemd: 
+       name: containerd
+       state: restarted
+       enabled: yes
+       daemon-reload: yes
+
+   - name: Make sure a containerd service unit is running
+     systemd:
+       state: started
+       name: containerd  
+
+   - name: Change from false to true "systemd_cgroup"
+     lineinfile:
+       path: /etc/containerd/config.toml
+       regex: systemd_cgroup =.*
+       line: systemd_cgroup = true
